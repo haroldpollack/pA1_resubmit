@@ -1,0 +1,11 @@
+base
+dplyr
+forecast
+knitr
+ggplot2
+zoo
+xts
+lattice
+gridExtra
+magrittr
+ggpubr

@@ -1,0 +1,323 @@
+---
+title: "PA1_resub20180901"
+author: "Harold Pollack"
+date: "9/2/2018"
+output: html_document
+---
+
+This R markdown file explores an activity dataset. It compares activity on the weekdays and weekends. It imputes values, and gives an opportunity to use GitHub. This is a resubmission.
+
+First I load libraries
+
+```{r setup, include=FALSE}
+library("dplyr", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library("forecast", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library("knitr", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library("ggplot2", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library("xts", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library(lattice)
+library("gridExtra", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library("ggpubr", lib.loc="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Now I read read and processe activity.csv to read the activity dataset. I also construct a logged version of steps, which I will use below.
+
+```{r read dataset, cache=TRUE}
+activity <- read.csv("/Users/haroldpollack/Documents/coursera_datascience3/activity.csv")
+activity$lsteps<-log(1+activity$steps)
+activity$day <-weekdays(as.Date(activity$date))
+table(activity$day)
+str(activity)
+summary(activity)
+```
+
+```{R mean and median, cache=TRUE}
+step_mean <- mean(activity$steps, na.rm = TRUE)
+step_median <- median(activity$steps, na.rm = TRUE)
+```
+Now the mean number of steps is `r step_mean`.
+
+The median number of steps is `r step_median`.
+
+## Now let's show some graphs of the step distribution
+
+
+```{r Histograms on the level and log scale, echo=FALSE, cache=TRUE}
+qplot(activity$steps, 
+      geom="histogram",
+      binwidth=50,  
+      main="Histogram of Steps over the entire dataset", 
+      fill=I("blue"), 
+      xlab = "Steps"
+      ) 
+## log of steps
+# hist(activity$lsteps, 
+#      breaks = 10,  
+#      main="Histogram of Steps shown on log scale", 
+#      xlab = "log(1+Steps)"
+#      ) 
+```
+
+## Find which days are weekends
+
+```{R weekends, cache=TRUE}
+charday <- as.character(activity$day)
+table(charday)
+dSunday<-as.numeric((activity$day=="Sunday"))
+dMonday<-as.numeric((activity$day=="Monday"))
+dTuesday<-as.numeric((activity$day=="Tuesday"))
+dWednesday<-as.numeric((activity$day=="Wednesday"))
+dThursday<-as.numeric((activity$day=="Thursday"))
+dFriday<-as.numeric((activity$day=="Friday"))
+dSaturday<-as.numeric((activity$day=="Saturday"))
+dweekend<-dSunday+dSaturday
+activity$dweekend <- dweekend
+table(dweekend)
+```
+
+Now we have to handle missing values. I replaced with nonnegative predicted values based on a simple regression with day dummies and interval dummies. I then forced the values to be non-negative. A slightly better model would employ censored regression or something like that.
+
+
+```{R missing values and aggregation, cache=TRUE}
+#
+#  regression model with non-interacted day and interval dummies
+#
+model_steps <- lm(steps ~ as.factor(day)+as.factor(interval), data=activity)
+# summary(model_steps)
+activity$missing_steps <- as.numeric(is.na(activity$steps))
+table(activity$missing_steps)
+n_missing <- sum(activity$missing_steps)
+# n_missing
+activity$pred_steps=predict(model_steps,activity)
+summary(activity$pred_steps)
+str(activity$pred_steps)
+activity$imputed_steps<-activity$steps
+summary(activity$imputed_steps)
+str(activity$imputed_steps)
+#
+# loop through each observation
+#
+for(i in 1:nrow(activity))
+{
+  activity$imputed_steps[i]<- activity$steps[i]
+  if(activity$missing_steps[i] == 1)
+  {
+    # 
+    #    Note that I want predicted values to be nonnegative. Which I do below.
+    #
+    activity$imputed_steps[i] <- max(0,activity$pred_steps[i])
+  }
+}
+summary(activity$imputed_steps_missing)
+str(activity$imputed_steps_missing)
+
+summary(activity$steps)
+summary(activity$imputed_steps)
+summary(activity$missing_steps)
+str(activity$steps)
+str(activity$imputed_steps)
+str(activity$missing_steps)
+imputed_steps <- activity$imputed_steps
+activity_date <- activity$date
+interval <-activity$interval
+```
+
+Note that there are `r n_missing' missing steps. 
+Now deal with weekend stuff in a clunky way by defining two variables.
+
+```{R now deal with weekend stuff, cache=TRUE}
+#
+# create weekend and weekday imputed step stuff. Loop through all the data and
+# fill in the weekend and weekday vales.
+#
+for(i in 1:nrow(activity))
+{
+  if(activity$dweekend[i] == 1)
+  {
+    # 
+    #    Note that I want predicted values to be nonnegative. Which I do below.
+    #
+    activity$weekend_steps[i] <- activity$imputed_steps[i]
+    activity$weekday_steps[i] <- NA
+    activity$day_class_factor <- "Weekend"
+  }
+  if(activity$dweekend[i] == 0)
+  {
+    # 
+    #    Note that I want predicted values to be nonnegative. Which I do below.
+    #
+    activity$weekday_steps[i] <- activity$imputed_steps[i]
+    activity$weekend_steps[i] <- NA
+    activity$day_class_factor <- "Weekday"
+  }
+}
+summary(activity$weekday_steps)
+#
+#
+#
+weekend_activity <- subset (activity,dweekend==1)
+str(weekend_activity)
+summary(weekend_activity)
+weekday_activity <- subset (activity,dweekend==0)
+str(weekday_activity)
+summary(weekday_activity)
+
+```
+
+Set up a weekend factor
+
+```{R set up week_activity, cache=TRUE}
+activity$weekend_factor <- as.factor(activity$dweekend)
+```
+
+This code is to be ignored. Left here as a template for me for future use 
+
+```{R graph xy plot}
+#xyplot(week_activity$imputed_steps ~ week_activity$interval | factor(as.factor(week_activity$dweekend),type="l", xlab = "Interval",ylab = "Steps"))
+# xyplot(week_activity$imputed_steps ~ week_activity$interval , xlab = "Interval",ylab = "Steps")
+```
+
+Now deal with daily averages using aggregate.
+
+```{R now deal with daily averages, cache=TRUE}
+#
+# First compute average by day
+#
+day_imputed_steps <- aggregate(imputed_steps,list(activity_day= activity_date),sum)
+day_imputed_steps$daily_steps <- day_imputed_steps$x
+str(day_imputed_steps)
+summary(day_imputed_steps$daily_steps)
+#
+# now average intervals
+#
+interval_imputed_steps <- aggregate(imputed_steps,list(activity_interval= interval),mean)
+interval_imputed_steps$interval_steps_imputed <- interval_imputed_steps$x
+str(interval_imputed_steps)
+summary(interval_imputed_steps)
+#
+# day_imputed_steps
+```
+
+Now show weekend and weekday separately
+
+```{R weekend and weekday intervals, cache=TRUE}
+interval_imputed_weekend_steps <- aggregate(activity$weekend_steps,list(activity_interval= interval),mean)
+interval_imputed_weekend_steps <- interval_imputed_weekend_steps$x
+str(interval_imputed_weekend_steps)
+summary(interval_imputed_weekend_steps)
+```
+
+Now find the interval with the largest average number of (imputed) steps, and the corresponding number of steps. 
+
+One notice. This is a resubmission. I noticed during peer grading that I had made a careless error in my original code. The maximum answer was correct, but my answer of"835" had the benefit of seeing the correct code. 
+
+```{R maximum imputed steps, cache=TRUE}
+#
+#  find the maximum imputed steps
+#
+max_interval <- interval_imputed_steps[which.max(interval_imputed_steps$interval_steps_imputed),1]  
+max_interval
+# 
+# maximum value of steps
+#
+max(interval_imputed_steps$interval_steps_imputed)
+interval_imputed_steps[which.max(interval_imputed_steps$interval_steps_imputed),3]
+```
+
+## Now show some graphs
+
+
+``` {R graphs, cache=TRUE}
+## log of steps
+#
+#     I commented out the logs here
+#
+hist(day_imputed_steps$daily_steps , 
+      breaks = 10,  
+      main="Histogram of daily steps", 
+     xlab = "average number of steps per day--with imputation",
+     ) 
+#
+# time series by day
+#
+plot(as.Date(day_imputed_steps$activity_day),day_imputed_steps$daily_steps, type="l", xlab = "Activity Day",ylab = "Daily Steps")
+# xyplot(as.Date(day_imputed_steps$activity_day),day_imputed_steps$daily_steps|day_imputed_steps$dweekend)
+day_imputed_steps$day_of_week <-weekdays(as.Date(day_imputed_steps$activity_day))
+# ggplot(day_imputed_steps)+geom_line(aes(x=activity_day,y=daily_steps))
+#
+#   Time series by 5-minute interval
+#
+table(day_imputed_steps$day_of_week)
+
+dSunday<-as.numeric((day_imputed_steps$day_of_week=="Sunday"))
+dSaturday<-as.numeric((day_imputed_steps$day_of_week=="Saturday"))
+day_imputed_steps$dweekend<-as.numeric(dSunday+dSaturday)
+table(day_imputed_steps$dweekend)
+for(i in 1:nrow(day_imputed_steps))
+{
+  day_imputed_steps$day_class[i]<- "weekday"
+  if(day_imputed_steps$dweekend[i] == 1)
+  {
+    # 
+    #    Note that I want predicted values to be nonnegative. Which I do below.
+    #
+    day_imputed_steps$day_class[i]<- "weekend"
+  }
+}
+day_imputed_steps$day_class<- as.factor(day_imputed_steps$day_class)
+table(day_imputed_steps$day_class)
+xyplot(day_imputed_steps$daily_steps ~ as.Date(day_imputed_steps$activity_day) | factor(day_imputed_steps$day_class),type="l", xlab = "Activity Day",ylab = "Daily Steps")
+
+hist(interval_imputed_steps$interval_steps_imputed, 
+      breaks = 10,  
+      main="Histogram of interval steps, averaged overall days",
+      xlab = "average number of steps per interval--with imputation",
+      ) 
+plot(interval_imputed_steps$activity_interval,interval_imputed_steps$interval_steps_imputed, type="l",xlab = "Activity Interval",ylab = "Interval Steps")
+xyplot(interval_imputed_steps$interval_steps_imputed ~ interval_imputed_steps$activity_interval, type="l",xlab = "Activity Interval",ylab = "Interval Steps")
+```
+
+Now weekend and weekday intervals
+
+```{R weekend code, cache=TRUE}
+#
+# now average intervals
+#
+weekend_interval_imputed_steps <- aggregate(weekend_activity$imputed_steps,list(weekend_activity_interval= weekend_activity$interval),mean)
+weekend_interval_imputed_steps$interval_steps_imputed <- weekend_interval_imputed_steps$x
+#
+# remove x
+#
+weekend_interval_imputed_steps$x <- NULL
+#
+# descriptives on weekend 
+#
+str(weekend_interval_imputed_steps)
+summary(weekend_interval_imputed_steps)
+```
+
+Now weekday code
+
+```{R weekday code, cache=TRUE}
+#
+# now average intervals
+#
+weekday_interval_imputed_steps <- aggregate(weekday_activity$imputed_steps,list(weekday_activity_interval= weekday_activity$interval),mean)
+weekday_interval_imputed_steps$interval_steps_imputed <- weekday_interval_imputed_steps$x
+str(weekday_interval_imputed_steps)
+summary(weekday_interval_imputed_steps)
+```
+
+## Now show the weeken/weekday graphs and the multi-panel
+
+```{R weekday and weekend graphs, cache=TRUE}
+p1 <- plot(weekday_interval_imputed_steps$weekday_activity_interval,weekday_interval_imputed_steps$interval_steps_imputed, type="l",xlab = "Weekday Activity Interval",ylab = "Interval Steps")
+p2 <- plot(weekend_interval_imputed_steps$weekend_activity_interval,weekend_interval_imputed_steps$interval_steps_imputed, type="l",xlab = "Weekend Activity Interval",ylab = "Interval Steps")
+
+q1 <- qplot(weekday_interval_imputed_steps$weekday_activity_interval,weekday_interval_imputed_steps$interval_steps_imputed,xlab = "Weekday Activity Interval",ylab = "Interval Steps", geom=c("point", "line"))
+q2 <- qplot(weekend_interval_imputed_steps$weekend_activity_interval,weekend_interval_imputed_steps$interval_steps_imputed,xlab = "Weekend Activity Interval",ylab = "Interval Steps", geom=c("point", "line"))
+
+grid.arrange (q1, q2, nrow = 1)
+```
